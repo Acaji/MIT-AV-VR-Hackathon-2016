@@ -1,0 +1,174 @@
+<apex:page controller="GrapevineController" showHeader="false">
+  <head>
+    <meta charset="utf-8"/>
+    <title>Hello, World! - A-Frame</title>
+    <meta name="description" content="Hello, World! - A-Frame"/>
+    <script src="https://aframe.io/releases/0.3.0/aframe.min.js"></script>
+    <script>
+
+    function getData()
+    {
+        var projectData = JSON.parse( document.getElementById( 'project' ).innerHTML );
+        var iterationData = JSON.parse( document.getElementById( 'iterations' ).innerHTML );
+        var nodeData = JSON.parse( document.getElementById( 'nodes' ).innerHTML );
+
+        var project = {
+            id: projectData.Id,
+            name: projectData.Name,
+            client: projectData.Account__r.Name
+        };
+
+        var iterations = [];
+        for ( var i=0; i<iterationData.length; i++ )
+        {
+            iterations[i] = {
+                id: iterationData[i].Id,
+                number: iterationData[i].Iteration_Number__c - 0,
+                startDate: iterationData[i].Start_Date__c,
+                endDate: iterationData[i].End_Date__c
+            };
+        }
+        
+        var nodes = [];
+        for ( var i=0; i<nodeData.length; i++ )
+        {
+            nodes[i] = {
+                id: nodeData[i].Id,
+                name: nodeData[i].Name,
+                description: nodeData[i].Description__c,
+                startDate: nodeData[i].Start_Date__c,
+                endDate: nodeData[i].End_Date__c,
+                phaseAngle: nodeData[i].Phase_Angle__c,
+                ownerName: nodeData[i].Owner__r.Name,
+                iterationNodes: []
+            };
+            for ( var j=0; j<nodeData[i].Iteration_Nodes__r.records.length; j++ )
+            {
+                nodes[i].iterationNodes[j] = {
+                    iterationNumber: nodeData[i].Iteration_Nodes__r.records[j].Iteration__r.Iteration_Number__c - 0,
+                    status: nodeData[i].Iteration_Nodes__r.records[j].Node_Status__c
+                };
+            }
+        }
+        
+        return {
+            project: project,
+            iterations: iterations,
+            nodes: nodes
+        };
+    }
+    
+    function placeSphere( x, y, z, r, c )
+    {
+        var scene = document.querySelector('#theScene');
+        var asphere = document.createElement('a-sphere');
+        asphere.setAttribute( 'position', ''+x+' '+y+' '+z );
+        asphere.setAttribute( 'radius', ''+r );
+        asphere.setAttribute( 'color', ''+c );
+        scene.appendChild( asphere );
+    }
+
+    function placeCylinder( x, y, minZ, maxZ, r, c )
+    {
+        var scene = document.querySelector('#theScene');
+        var acylinder = document.createElement('a-cylinder');
+        acylinder.setAttribute( 'position', ''+x+' '+y+' '+((minZ+maxZ)/2) );
+        acylinder.setAttribute( 'rotation', '90 0 0' );
+        acylinder.setAttribute( 'height', ''+Math.abs(maxZ-minZ) );
+        acylinder.setAttribute( 'radius', ''+r );
+        acylinder.setAttribute( 'color', ''+c );
+        scene.appendChild( acylinder );
+    }
+
+    function spiralOrbit( minZ, maxZ )
+    {
+        var segments = 361, radius = 8;
+        for ( var i=0; i<segments; i++ )
+        {
+            var alpha = 2*Math.PI*i/(segments-1) - Math.PI/2;
+            placeSphere( radius*Math.cos(alpha), radius*Math.sin(alpha), minZ + (maxZ-minZ)*i/(segments-1), 0.15, '#A39085' );
+        }
+    }
+
+    function mapDateToZ( dateString )
+    {
+        var date = new Date( dateString );
+        var dateNumber = (date.getYear() - 116)*366 + (date.getMonth() - 9)*31 + date.getDate();
+        return -1.5*dateNumber;
+    }
+
+    window.addEventListener("load", function() {
+
+        var data = getData();
+
+        for ( var i=0; i<data.iterations.length; i++ )
+        {
+            var iteration;
+            for ( var j=0; j<data.iterations.length; j++ )
+            {
+                if ( data.iterations[j].number == i+1 )
+                {
+                    iteration = data.iterations[j];
+                    break;
+                }
+            }
+            var minZ = mapDateToZ( iteration.startDate );
+            var maxZ = iteration.endDate ? mapDateToZ( iteration.endDate ) : minZ - 6;
+            spiralOrbit( minZ, maxZ );            
+        }
+
+        var nodeColors = {
+            "New" : '#FFFFFF',
+            "In Play" : '#00C000',
+            "Dead" : '#800000',
+            "Sustained" : '#831DD1',
+            "Evolved" : '#C0C000'
+        };
+
+        for ( var i=0; i<data.nodes.length; i++ )
+        {
+            var node = data.nodes[i];
+            var phaseAngle = node.phaseAngle;
+            var x = 8*Math.cos( phaseAngle );
+            var y = 8*Math.sin( phaseAngle );
+            for ( var j=0; j<node.iterationNodes.length; j++ )
+            {
+                var inode = node.iterationNodes[j];
+                var color = nodeColors[ inode.status ];
+                var inum = inode.iterationNumber;
+                var iteration;
+                for ( var idx=0; idx<data.iterations.length; idx++ )
+                {
+                    if ( data.iterations[idx].number == inum )
+                    {
+                        iteration = data.iterations[idx];
+                        break;
+                    }
+                }
+                var minZ = mapDateToZ( iteration.startDate );
+                var maxZ = iteration.endDate ? mapDateToZ( iteration.endDate ) : minZ - 6;
+                placeSphere( x, y, minZ, 0.6, color );
+                if ( inode.status != "Dead" )
+                {
+                    placeCylinder( x, y, minZ, maxZ, 0.1, color );
+                }
+            }
+        }
+    });
+    </script>
+  </head>
+  <body>
+    <a-scene id="theScene">
+<!--
+      <a-box position="-1 0.5 -3" rotation="0 45 0" color="#4CC3D9"></a-box>
+      <a-sphere position="0 1.25 -5" radius="1.25" color="#EF2D5E"></a-sphere>
+      <a-cylinder position="1 0.75 -3" radius="0.5" height="1.5" color="#FFC65D"></a-cylinder>
+      <a-plane position="0 0 -4" rotation="-90 0 0" width="4" height="4" color="#7BC8A4"></a-plane>
+-->
+      <a-sky color="#BFD7FC"></a-sky>
+    </a-scene>
+    <div id="project" style="display:none;">{!projectAsJson}</div>
+    <div id="iterations" style="display:none;">{!iterationsAsJson}</div>
+    <div id="nodes" style="display:none;">{!nodesAsJson}</div>
+  </body>
+</apex:page>
