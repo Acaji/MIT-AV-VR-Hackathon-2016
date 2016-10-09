@@ -1,0 +1,398 @@
+<apex:page standardStylesheets="false" showheader="false">
+    <apex:includeScript value="{!URLFOR($Resource.webVRjs, '/js/third-party/webvr-polyfill.js')}"/>
+    <apex:includeScript value="{!URLFOR($Resource.webVRjs, '/js/third-party/wglu/wglu-url.js')}"/>
+    <apex:includeScript value="{!URLFOR($Resource.webVRjs, '/js/third-party/gl-matrix-min.js')}"/>
+    <apex:includeScript value="{!URLFOR($Resource.webVRjs, '/js/third-party/wglu/wglu-program.js')}"/>
+    <apex:includeScript value="{!URLFOR($Resource.webVRjs, '/js/third-party/wglu/wglu-stats.js')}"/>
+    <apex:includeScript value="{!URLFOR($Resource.webVRjs, '/js/third-party/wglu/wglu-texture.js')}"/>
+    <apex:includeScript value="{!URLFOR($Resource.webVRjs, '/js/vr-cube-sea.js')}"/>
+    <apex:includeScript value="{!URLFOR($Resource.webVRjs, '/js/vr-samples-util.js')}"/>
+
+<div id="effect">
+    
+</div>
+<div id="info"></div>
+
+<script id="vs" type="x-shader/x-vertex">
+            attribute vec3 position;
+            void main() {
+                gl_Position = vec4( position, 1.0 );
+            }
+</script>
+
+<script id="fs" type="x-shader/x-fragment">
+            uniform float time;
+            uniform vec2 resolution;
+            uniform vec2 aspect;
+
+            void main( void ) {
+
+                vec2 position = -aspect.xy + 2.0 * gl_FragCoord.xy / resolution.xy * aspect.xy;
+                float angle = 0.0 ;
+                float radius = length(position) ;
+                if (position.x != 0.0 && position.y != 0.0){
+                    angle = degrees(atan(position.y,position.x)) ;
+                }
+                float amod = mod(angle+30.0 -240.0*log(radius), 30.0) ;
+                if (amod<5.0){
+                    gl_FragColor = vec4( 0.0, 0.0, 0.0, 1.0 );
+                } else{
+                    gl_FragColor = vec4( 1.0, 1.0, 1.0, 1.0 );
+                }
+            }
+
+</script>
+<script type="text/javascript">
+    function getOrCreateCanvas() {
+    
+        canvas = document.getElementById( "webgl-canvas" );
+        if (canvas == null) {
+            effectDiv = document.getElementById( 'effect' );
+
+            canvas = document.createElement( 'canvas' );
+            canvas.id="webgl-canvas";
+            effectDiv.appendChild( canvas );
+        }
+        return canvas;
+    }
+
+    window.addEventListener("load", function() {
+    var effectDiv, sourceDiv, canvas, gl, buffer, vertex_shader, fragment_shader, currentProgram,
+            vertex_position, parameters = { start_time: new Date().getTime(), time: 0, screenWidth: 0, screenHeight: 0 };
+
+    init();
+    setInterval( loop, 1000 / 60 );
+
+    function init() {
+
+        vertex_shader = document.getElementById( 'vs' ).textContent;
+        fragment_shader = document.getElementById( 'fs' ).textContent;
+
+//        effectDiv = document.getElementById( 'effect' );
+
+        canvas = getOrCreateCanvas(); // document.createElement( 'canvas' );
+//        canvas.id="webgl-canvas";
+//        effectDiv.appendChild( canvas );
+
+        // Initialise WebGL
+
+        try {
+
+            gl = canvas.getContext( 'experimental-webgl' );
+
+        } catch( error ) { }
+
+        if ( !gl ) {
+
+            alert("WebGL not supported");
+            throw "cannot create webgl context";
+
+        }
+
+        // Create Vertex buffer (2 triangles)
+
+        buffer = gl.createBuffer();
+        gl.bindBuffer( gl.ARRAY_BUFFER, buffer );
+        gl.bufferData( gl.ARRAY_BUFFER, new Float32Array( [ - 1.0, - 1.0, 1.0, - 1.0, - 1.0, 1.0, 1.0, - 1.0, 1.0, 1.0, - 1.0, 1.0 ] ), gl.STATIC_DRAW );
+
+        // Create Program
+
+        currentProgram = createProgram( vertex_shader, fragment_shader );
+
+        onWindowResize();
+        window.addEventListener( 'resize', onWindowResize, false );
+
+    }
+    
+    function createProgram( vertex, fragment ) {
+
+        var program = gl.createProgram();
+
+        var vs = createShader( vertex, gl.VERTEX_SHADER );
+        var fs = createShader( '#ifdef GL_ES\nprecision highp float;\n#endif\n\n' + fragment, gl.FRAGMENT_SHADER );
+
+        if ( vs == null || fs == null ) return null;
+
+        gl.attachShader( program, vs );
+        gl.attachShader( program, fs );
+
+        gl.deleteShader( vs );
+        gl.deleteShader( fs );
+
+        gl.linkProgram( program );
+
+        if ( !gl.getProgramParameter( program, gl.LINK_STATUS ) ) {
+
+            alert( "ERROR:\n" +
+                    "VALIDATE_STATUS: " + gl.getProgramParameter( program, gl.VALIDATE_STATUS ) + "\n" +
+                    "ERROR: " + gl.getError() + "\n\n" +
+                    "- Vertex Shader -\n" + vertex + "\n\n" +
+                    "- Fragment Shader -\n" + fragment );
+
+            return null;
+
+        }
+
+        return program;
+
+    }
+
+    function createShader( src, type ) {
+
+        var shader = gl.createShader( type );
+
+        gl.shaderSource( shader, src );
+        gl.compileShader( shader );
+
+        if ( !gl.getShaderParameter( shader, gl.COMPILE_STATUS ) ) {
+
+            alert( ( type == gl.VERTEX_SHADER ? "VERTEX" : "FRAGMENT" ) + " SHADER:\n" + gl.getShaderInfoLog( shader ) );
+            return null;
+
+        }
+
+        return shader;
+
+    }
+
+    function onWindowResize( event ) {
+
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+
+        parameters.screenWidth = canvas.width;
+        parameters.screenHeight = canvas.height;
+
+        parameters.aspectX = canvas.width/canvas.height ;
+        parameters.aspectY = 1.0 ;
+
+        gl.viewport( 0, 0, canvas.width, canvas.height );
+
+    }
+
+    function loop() {
+
+        if ( !currentProgram ) return;
+
+        parameters.time = new Date().getTime() - parameters.start_time;
+
+        gl.clear( gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT );
+
+        // Load program into GPU
+
+        gl.useProgram( currentProgram );
+
+        // Set values to program variables
+
+        gl.uniform1f( gl.getUniformLocation( currentProgram, 'time' ), parameters.time / 1000 );
+        gl.uniform2f( gl.getUniformLocation( currentProgram, 'resolution' ), parameters.screenWidth, parameters.screenHeight );
+        gl.uniform2f( gl.getUniformLocation( currentProgram, 'aspect' ), parameters.aspectX, parameters.aspectY );
+
+        // Render geometry
+
+        gl.bindBuffer( gl.ARRAY_BUFFER, buffer );
+        gl.vertexAttribPointer( vertex_position, 2, gl.FLOAT, false, 0, 0 );
+        gl.enableVertexAttribArray( vertex_position );
+        gl.drawArrays( gl.TRIANGLES, 0, 6 );
+        gl.disableVertexAttribArray( vertex_position );
+
+    }});
+    
+
+    /* global mat4, VRCubeSea, WGLUStats, WGLUTextureLoader, VRSamplesUtil */
+
+///*
+    (function () {
+        "use strict";
+        var vrDisplay = null;
+        var frameData = null;
+        var webglCanvas = getOrCreateCanvas();
+
+        // ================================
+        // WebVR-specific code begins here.
+        // ================================
+
+        function onVRRequestPresent () {
+            // This can only be called in response to a user gesture.
+            vrDisplay.requestPresent([{ source: webglCanvas }]).then(function () {
+                // Nothing to do because we're handling things in onVRPresentChange.
+            }, function () {
+                VRSamplesUtil.addError("requestPresent failed.", 2000);
+            });
+        }
+
+        function onVRExitPresent () {
+            // No sense in exiting presentation if we're not actually presenting.
+            // (This may happen if we get an event like vrdisplaydeactivate when
+            // we weren't presenting.)
+            if (!vrDisplay.isPresenting)
+                return;
+
+            vrDisplay.exitPresent().then(function () {
+                // Nothing to do because we're handling things in onVRPresentChange.
+            }, function () {
+                VRSamplesUtil.addError("exitPresent failed.", 2000);
+            });
+        }
+
+        function onVRPresentChange () {
+            // When we begin or end presenting, the canvas should be resized to the
+            // recommended dimensions for the display.
+//JA 10.9 9am            onResize();
+
+            if (vrDisplay.isPresentingvr && Display.capabilities.hasExternalDisplay) {//JA 10.9 
+ //JA 10.9               if (vrDisplay.capabilities.hasExternalDisplay) {
+                    // Because we're not mirroring any images on an external screen will
+                    // freeze while presenting. It's better to replace it with a message
+                    // indicating that content is being shown on the VRDisplay.
+                    presentingMessage.style.display = "block";
+
+                    // On devices with an external display the UA may not provide a way
+                    // to exit VR presentation mode, so we should provide one ourselves.
+                    VRSamplesUtil.removeButton(vrPresentButton);
+                    vrPresentButton = VRSamplesUtil.addButton("Exit VR", "E", "media/icons/cardboard64.png", onVRExitPresent);
+
+
+ //JA 10.9                }
+            } else {
+                // If we have an external display take down the presenting message and
+                // change the button back to "Enter VR".
+                if (vrDisplay.capabilities.hasExternalDisplay) {
+                    presentingMessage.style.display = "none";
+
+                    VRSamplesUtil.removeButton(vrPresentButton);
+                    vrPresentButton = VRSamplesUtil.addButton("Enter VR", "E", "media/icons/cardboard64.png", onVRRequestPresent);
+
+                }
+            }
+        }
+
+        if (navigator.getVRDisplays) {
+
+            navigator.getVRDisplays().then(function (displays) {
+                if (displays.length > 0) {
+                    vrDisplay = displays[0];
+
+                    // It's heighly reccommended that you set the near and far planes to
+                    // something appropriate for your scene so the projection matricies
+                    // WebVR produces have a well scaled depth buffer.
+                    vrDisplay.depthNear = 0.1;
+                    vrDisplay.depthFar = 1024.0;
+
+//                    VRSamplesUtil.addButton("Reset Pose", "R", null, function () { vrDisplay.resetPose(); });
+
+                    // Generally, you want to wait until VR support is confirmed and
+                    // you know the user has a VRDisplay capable of presenting connected
+                    // before adding UI that advertises VR features.
+                    if (vrDisplay.capabilities.canPresent)
+                    {
+	                    VRSamplesUtil.addInfo("WebVR supported, VRDisplays found, can present.", 3000);
+                        vrPresentButton = VRSamplesUtil.addButton("Enter VR", "E", "media/icons/cardboard64.png", onVRRequestPresent);
+					}
+					else
+					{
+	                    VRSamplesUtil.addInfo("WebVR supported, VRDisplays found, can NOT present.", 3000);
+					}
+                    // The UA may kick us out of VR present mode for any reason, so to
+                    // ensure we always know when we begin/end presenting we need to
+                    // listen for vrdisplaypresentchange events.
+                    window.addEventListener('vrdisplaypresentchange', onVRPresentChange, false);
+
+                    // These events fire when the user agent has had some indication that
+                    // it would be appropariate to enter or exit VR presentation mode, such
+                    // as the user putting on a headset and triggering a proximity sensor.
+                    // You can inspect the `reason` property of the event to learn why the
+                    // event was fired, but in this case we're going to always trust the
+                    // event and enter or exit VR presentation mode when asked.
+                    window.addEventListener('vrdisplayactivate', onVRRequestPresent, false);
+                    window.addEventListener('vrdisplaydeactivate', onVRExitPresent, false);
+                } else {
+                    VRSamplesUtil.addInfo("WebVR supported, but no VRDisplays found.", 3000);
+                }
+            });
+        } else if (navigator.getVRDevices) {
+            VRSamplesUtil.addError("Your browser supports WebVR but not the latest version. See <a href='http://webvr.info'>webvr.info</a> for more info.");
+        } else {
+            VRSamplesUtil.addError("Your browser does not support WebVR. See <a href='http://webvr.info'>webvr.info</a> for assistance.");
+        }
+
+        function onResize () {
+		    var gl = webglCanvas.getContext("experimental-webgl", { alpha: false, antialias: !VRSamplesUtil.isMobile() });
+            if (vrDisplay && vrDisplay.isPresenting) {
+                // If we're presenting we want to use the drawing buffer size
+                // recommended by the VRDevice, since that will ensure the best
+                // results post-distortion.
+                var leftEye = vrDisplay.getEyeParameters("left");
+                var rightEye = vrDisplay.getEyeParameters("right");
+
+                // For simplicity we're going to render both eyes at the same size,
+                // even if one eye needs less resolution. You can render each eye at
+                // the exact size it needs, but you'll need to adjust the viewports to
+                // account for that.
+                webglCanvas.width = Math.max(leftEye.renderWidth, rightEye.renderWidth) * 2;
+                webglCanvas.height = Math.max(leftEye.renderHeight, rightEye.renderHeight);
+            } else {
+                // We only want to change the size of the canvas drawing buffer to
+                // match the window dimensions when we're not presenting.
+                webglCanvas.width = webglCanvas.offsetWidth * window.devicePixelRatio;
+                webglCanvas.height = webglCanvas.offsetHeight * window.devicePixelRatio;
+            }
+        }
+
+        window.addEventListener("resize", onResize, false);
+        onResize();
+
+        function onAnimationFrame (t) {
+		        var gl = webglCanvas.getContext("experimental-webgl", {alpha: false,
+                                                      antialias: !VRSamplesUtil.isMobile()}),
+		        projectionMat = mat4.create(),
+                viewMat = mat4.create(),
+                lastvar;
+            gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+            if (vrDisplay) {
+                // When presenting content to the VRDisplay we want to update at its
+                // refresh rate if it differs from the refresh rate of the main
+                // display. Calling VRDisplay.requestAnimationFrame ensures we render
+                // at the right speed for VR.
+                vrDisplay.requestAnimationFrame(onAnimationFrame);
+
+                // As a general rule you want to get the pose as late as possible
+                // and call VRDisplay.submitFrame as early as possible after
+                // retrieving the pose. Do any work for the frame that doesn't need
+                // to know the pose earlier to ensure the lowest latency possible.
+                //var pose = vrDisplay.getPose();
+                vrDisplay.getFrameData(frameData);
+
+                if (vrDisplay.isPresenting) {
+                    // When presenting render a stereo view.
+                    gl.viewport(0, 0, webglCanvas.width * 0.5, webglCanvas.height);
+
+                    gl.viewport(webglCanvas.width * 0.5, 0, webglCanvas.width * 0.5, webglCanvas.height);
+
+                    // If we're currently presenting to the VRDisplay we need to
+                    // explicitly indicate we're done rendering.
+                    vrDisplay.submitFrame();
+                } else {
+                    // When not presenting render a mono view that still takes pose into
+                    // account.
+                    gl.viewport(0, 0, webglCanvas.width, webglCanvas.height);
+                    // It's best to use our own projection matrix in this case, but we can use the left eye's view matrix
+                    mat4.perspective(projectionMat, Math.PI*0.4, webglCanvas.width / webglCanvas.height, 0.1, 1024.0);
+                }
+            } else {
+                window.requestAnimationFrame(onAnimationFrame);
+
+                // No VRDisplay found.
+                gl.viewport(0, 0, webglCanvas.width, webglCanvas.height);
+                mat4.perspective(projectionMat, Math.PI*0.4, webglCanvas.width / webglCanvas.height, 0.1, 1024.0);
+                mat4.identity(viewMat);
+            }
+
+        }
+//        window.requestAnimationFrame(onAnimationFrame);
+
+    })();
+
+</script>    
+</apex:page>
