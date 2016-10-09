@@ -1,7 +1,7 @@
 <apex:page controller="GrapevineController" showHeader="false">
   <head>
     <meta charset="utf-8"/>
-    <title>Hello, World! - A-Frame</title>
+    <title>Grapevine</title>
     <meta name="description" content="Hello, World! - A-Frame"/>
     <script src="https://aframe.io/releases/0.3.0/aframe.min.js"></script>
     <script>
@@ -147,10 +147,11 @@
                 }
                 var minZ = mapDateToZ( iteration.startDate );
                 var maxZ = iteration.endDate ? mapDateToZ( iteration.endDate ) : minZ - 6;
-                placeSphere( x, y, minZ, 0.6, color );
+                var zOffset = (maxZ-minZ) * ((phaseAngle+Math.PI/2) /2/Math.PI);
+                placeSphere( x, y, minZ+zOffset, 0.6, color );
                 if ( inode.status != "Dead" )
                 {
-                    placeCylinder( x, y, minZ, maxZ, 0.1, color );
+                    placeCylinder( x, y, minZ+zOffset, maxZ+zOffset, 0.1, color );
                 }
             }
         }
